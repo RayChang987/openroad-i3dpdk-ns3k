@@ -161,17 +161,7 @@ python3 scripts/plot_drt.py drt.png out/gcd/NS3K_5T/base:gcd out/serv/NS3K_5T/ba
 
 ## The flow
 
-```mermaid
-flowchart LR
-    N["Yosys netlist<br/>designs/"] --> F["Floorplan<br/>core sizing, IO pins,<br/>RTL-MP macros"]
-    F --> P["Power grid<br/>M0 rails, M3 stripes,<br/>core ring"]
-    P --> K["Keep-out<br/>under the<br/>M3 stripes"]
-    K --> G["Placement<br/>timing + routability<br/>driven, PDN-aware"]
-    G --> C["CTS<br/>+ setup/hold repair"]
-    C --> R["Global route<br/>+ incremental repair"]
-    R --> D["Detailed route<br/>TritonRoute"]
-    D --> O["DEF, netlist,<br/>timing, power,<br/>DRC, PG reports"]
-```
+<img src="docs/images/flow.png" width="560" alt="The flow: Yosys netlist, floorplan, power grid, placement, then CTS, global route, detailed route and outputs">
 
 | Stage | What happens |
 |---|---|
@@ -393,6 +383,7 @@ place and route, predictive PDK, EDA, open-source EDA.</sub>
 │   ├── summarize.py       table of all runs
 │   ├── orfs_ref.sh        ORFS reference run on another platform (for the roadmap)
 │   ├── roadmap.py         technology roadmap table, json and figure
+│   ├── plot_flow.py       the flow diagram
 │   ├── snapshot.tcl       headless layout images
 │   └── plot_drt.py        detailed routing convergence plot
 └── docs/images/
