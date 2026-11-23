@@ -14,7 +14,7 @@
 
 <sub><b>SERV</b> (bit-serial RISC-V), placed and routed on the <b>NS3K_5T</b> library: 8.6 × 8.6 µm, 1,175 cells, <b>0 DRC</b>, clean power grid.</sub>
 
-**[Quick start](#quick-start)** · [Gallery](#gallery) · [The M3 stripe problem](#the-m3-stripe-problem) · [The flow](#the-flow) · [Results](#results) · [Open problems](#open-problems) · [FAQ](#faq)
+**[Quick start](#quick-start)** · [Gallery](#gallery) · [The flow](#the-flow) · [Results](#results) · [Technology roadmap](#technology-roadmap) · [Open problems](#open-problems) · [FAQ](#faq)
 
 </div>
 
@@ -34,7 +34,7 @@ library. This repository is a complete, scriptable **OpenROAD** flow for it:
 - **One command** from a Yosys netlist to a routed DEF, with timing, power, DRC and power-grid reports.
 - **Real geometry (1×)**: 44 nm sites, 120 nm rows, 24 nm M2 pitch, 22 nm M3 pitch, M0 power rails.
 - **Strictly unidirectional M2–M4** (`RIGHTWAYONGRIDONLY` + `RECTONLY`), as printed at this node: no wrong-way jogs, no off-track wires.
-- **A power grid that routes**: M3 VDD/VSS stripe pairs tied to every rail, a core ring, and a placement keep-out under the stripes that takes the detailed router from a stuck run to 0 violations (see [The M3 stripe problem](#the-m3-stripe-problem)).
+- **A power grid that routes**: M3 VDD/VSS stripe pairs tied to every rail, a core ring, and a placement keep-out under the stripes, without which the detailed router stalls next to them under unidirectional M2 (gcd: 12 violations after 20 iterations and 50 min, vs. 0 in 1.7 min).
 - **Hard macros** (abstract SRAMs) placed by RTL-MP, with their own power grid.
 - **12 benchmark designs** included as netlists (gcd, SERV, AES, RISC-V, Rocket, SweRV, BlackParrot, …).
 - **No commercial tool license, no GUI.** Everything runs in the OpenROAD docker image, layout snapshots included.
@@ -45,7 +45,7 @@ library. This repository is a complete, scriptable **OpenROAD** flow for it:
 |---|---|
 | Floorplan → detailed route, **9 of 12** designs (gcd, SERV, AES, riscv32i, dynamic_node, jpeg, tinyRocket, ethmac, bp_fe_top) | **0 DRC**, power grid clean |
 | Largest routed design | jpeg, 64,369 cells, 55.4 × 55.4 µm, 0 DRC |
-| Not closed yet | bp_be_top, swerv, swerv_wrapper (no finished detailed route; see [Open problems](#open-problems)) |
+| Not closed yet | bp_be_top, swerv, swerv_wrapper (no finished detailed route yet; see [Open problems](#open-problems)) |
 | Timing | gcd, AES meet 1.0 ns after routing; the others don't (see [Results](#results)) |
 
 ## Gallery
@@ -56,7 +56,7 @@ library. This repository is a complete, scriptable **OpenROAD** flow for it:
 <td width="50%"><img src="docs/images/tinyRocket_place.png" alt="tinyRocket placed with SRAM macros and the power grid"/></td>
 </tr>
 <tr>
-<td><sub><b>An M3 stripe pair</b> (SERV, close-up). The two olive bands are the VDD/VSS stripes, the blue lines the M0 rails they are tied to. No cell sits under them or next to them: that is the keep-out of <a href="#the-m3-stripe-problem">the next section</a>.</sub></td>
+<td><sub><b>An M3 stripe pair</b> (SERV, close-up). The two olive bands are the VDD/VSS stripes, the blue lines the M0 rails they are tied to. No cell sits under them or next to them: that is the placement keep-out (<code>PG_M3_KEEPOUT_SITES</code>).</sub></td>
 <td><sub><b>tinyRocket</b> (Rocket tile with SRAM macros, 30,280 cells, 40.7 × 40.9 µm) after placement. The macros sit in the top-left corner, rows are cut around them, and the M3 stripe grid covers the standard cells.</sub></td>
 </tr>
 <tr>
@@ -90,39 +90,6 @@ clock period 1.0 ns (SERV: 0.25 ns), up to 64 detailed routing iterations. Numbe
 Cells exclude macros; utilization is of the standard cells in the die. Timing and power use the placeholder wire R/C of the tech LEF and are
 estimates, see [The platform](#the-platform). The clock periods are targets, not tuned:
 a negative WNS says the design needs a longer period, or work on timing, not that routing failed.
-
-## The M3 stripe problem
-
-Every rail is on M0, and the grid reaches it through VDD/VSS stripe pairs on M3 (every
-2 µm) with an M0→M1→M2→M3 via stack on each rail they cross. Under a stripe pair the
-M3 tracks are taken, and every 120 nm there is a stack with M1 and M2 pads. A cell
-placed there can only bring its pins out on M2, and under unidirectional M2 a wire
-cannot jog around the stacks.
-
-The detailed router then stalls next to the stripes: M2 shorts between signals, and M3
-spacing to VDD, all inside or within three sites of a stripe pair. Global routing does
-not see it. On gcd (UTIL 0.6, at most 20 detailed routing iterations, 2 threads):
-
-| M3 stripe pairs | M2–M4 | Keep-out | DRT iterations | Violations left | DRT time |
-|---|---|---|---|---|---|
-| none (`PG_M3_PITCH_UM=0`) | unidirectional | — | 5 | **0** | 36 s |
-| every 2 µm | bidirectional (`ROUTE_UNIDIR=0`) | off | 4 | **0** | 15 s |
-| every 2 µm | unidirectional | off (`PG_M3_KEEPOUT_SITES=-1`) | 20 (limit) | **12** (10 M2 short, 1 M2 + 1 M3 spacing) | 50 min |
-| every 2 µm | unidirectional | 1 site (default) | 6 | **0** | 1.7 min |
-
-Either the stripes or the unidirectional rule alone is fine; the two together are not,
-and the keep-out restores convergence.
-
-The flow therefore keeps standard cells out from under every stripe pair, plus one
-site on each side (`PG_M3_KEEPOUT_SITES`, default 1; `-1` turns it off). It costs about
-12 % of the row width (0.23 µm of every 2 µm), which the placer absorbs at the usual
-utilizations. A partial blockage (`create_blockage -max_density`) does not help: the
-detailed placer treats every placement blockage as hard.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/drt_convergence_dark.png">
-  <img src="docs/images/drt_convergence.png" alt="Detailed routing violations per iteration, with and without the M3 stripe keep-out">
-</picture>
 
 ## Quick start
 
@@ -285,6 +252,70 @@ Metal stack: M0 … M16 (M2/M4 at a 24 nm pitch, M3 at 22 nm, M1 at 44 nm); libe
 plus SERV. The PDK has no TIE cells, so constants are tied logically to VDD/VSS. It has
 no delay cells either, so hold is fixed with buffer chains.
 
+## Technology roadmap
+
+The same RTL through OpenROAD on six open PDKs from
+[OpenROAD-flow-scripts](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts)
+(including the ones packaged in [lambdapdk](https://pypi.org/project/lambdapdk/)) and on
+i3dPDK_NS3K, all in the same image. Each ORFS platform uses its own reference setup
+(clock, utilization); the NS3K runs use a clock close to what the library reaches
+(gcd 0.5 ns, aes 0.8 ns).
+
+<img src="docs/images/roadmap.png" alt="Logic cell area of gcd and aes on GF 180 nm, SkyWater 130 nm, IHP 130 nm, FreePDK 45 nm, ASAP7, i3dPDK_NS3K and GT2N">
+
+<sub>Logic area of gcd and aes. Grey: the ORFS platforms. Orange: NS3K with this flow.</sub>
+
+On area, the 5-track nanosheet library sits between ASAP7 and GT2N for aes (313 µm²,
+vs. 1,421 and 482) and below both for gcd. On speed it does not: aes reaches 1.4 GHz,
+about half of ASAP7 and GT2N. These are single example runs, not a calibrated
+comparison, so check them against your own settings before quoting them.
+
+<details>
+<summary><b>Full numbers: clock, Fmax, area, wirelength, power, energy</b></summary>
+
+**gcd**
+
+| Platform | Clock (ns) | Fmax (GHz) | Logic area (µm²) | Die (µm²) | Wirelength (µm) | Power (mW) | Energy / cycle (pJ) | DRC |
+|---|---|---|---|---|---|---|---|---|
+| GF 180 nm | 3 | 0.27 | 18,156 | 26,677 | 14,912 | 47 | 141 | 0 |
+| SkyWater 130 nm | 1.1 | 0.43 | 4,320 | 6,404 | 7,425 | 5.29 | 5.82 | 0 |
+| IHP 130 nm | 1.5 | 0.59 | 6,378 | 34,648 | 10,930 | 3.01 | 4.52 | 0 |
+| FreePDK 45 nm | 0.25 | 2.40 | 896 | 1,278 | 4,421 | 3.85 | 0.963 | 0 |
+| ASAP7 7 nm | 0.31 | 3.18 | 45.1 | 79 | 812 | 0.64 | 0.199 | 0 |
+| **NS3K NS 5T** | 0.5 | 2.48¹ | 9.31 | 23.5 | 467 | 0.642¹ | 0.321¹ | 0 |
+| GT2N 2 nm | 0.17 | 4.48 | 19.7 | 78.9 | 713 | 0.677 | 0.115 | 0 |
+
+**aes**
+
+| Platform | Clock (ns) | Fmax (GHz) | Logic area (µm²) | Die (µm²) | Wirelength (µm) | Power (mW) | Energy / cycle (pJ) | DRC |
+|---|---|---|---|---|---|---|---|---|
+| GF 180 nm | 3 | 0.27 | 685,171 | 1,008,080 | 1,129,235 | 2,475 | 7,425 | 0 |
+| SkyWater 130 nm | 3.6 | 0.27 | 118,535 | 225,806 | 571,574 | 70 | 252 | 0 |
+| IHP 130 nm | 2 | 0.40 | 209,113 | 284,073 | 627,422 | 75.5 | 151 | 0 |
+| FreePDK 45 nm | 0.82 | 1.21 | 18,872 | 62,612 | 223,732 | 47.6 | 39 | 0 |
+| ASAP7 7 nm | 0.38 | 2.49 | 1,421 | 2,373 | 50,810 | 18.9 | 7.18 | 0 |
+| **NS3K NS 5T** | 0.8 | 1.40¹ | 313 | 627 | 32,046 | 16.7¹ | 13.4¹ | 0 |
+| GT2N 2 nm | 0.35 | 2.77 | 482 | 1,743 | 37,296 | 7.68 | 2.69 | 0 |
+
+Logic area counts buffers, inverters, flops and combinational cells, without fill, tap
+or endcap cells. Energy per cycle is power × clock period. NS3K and GT2N are at 0.7 V
+typical; GF 180 nm is at its fast corner (1.98 V, 125 °C), which explains its power.
+
+¹ NS3K timing and power use placeholder wire R/C (see [The platform](#the-platform)).
+They're good for comparing NS3K runs with each other, rough against other PDKs. The cell
+area is the PDK's own.
+
+To reproduce:
+
+```bash
+scripts/orfs_ref.sh gt2n aes                      # any ORFS platform / design, into out/_orfs/
+env OUT_TAG=p800 scripts/run_or.sh aes NS3K_5T 0.8
+env OUT_TAG=p500 scripts/run_or.sh gcd NS3K_5T 0.5
+python3 scripts/roadmap.py --plot                 # table, docs/roadmap/results.json, figure
+```
+
+</details>
+
 ## Open problems
 
 Contributions and ideas are very welcome. These are open research questions as much as
@@ -292,11 +323,11 @@ engineering tasks.
 
 ### 1. Three designs without a finished route
 
-bp_be_top, swerv and swerv_wrapper have no finished detailed route in the results above.
-bp_be_top and swerv reach global routing, and their detailed-routing logs stop at about
-6,000 and 33,000 violations at 70 % of an iteration. swerv_wrapper (three macros, UTIL 0.4)
-has a log that ends during timing repair after CTS. Whether it is the stripe keep-out, the macro
-channels or just run time is not known yet.
+bp_be_top, swerv and swerv_wrapper (the three with the most macros and the largest
+netlists) are not in the results above: no run of them has finished detailed routing yet.
+Earlier attempts were still reporting thousands of violations when they were stopped,
+and the 12 % stripe keep-out, the macro channels and plain run time are all candidates.
+Which one it is is not known yet.
 
 ### 2. Timing closure
 
@@ -321,15 +352,13 @@ stripes on a higher metal could give some of it back; neither is evaluated here.
 Yes. With this flow 9 of the 12 included designs, up to 64,000 cells, reach 0 DRC on
 `NS3K_5T` with M2–M4 strictly unidirectional and on-track. See [Results](#results).
 
-**Why does the detailed router get stuck next to power stripes?**
-Under a stripe pair, M3 tracks are taken and M0→M3 via stacks leave M1/M2 pads every
-120 nm. With unidirectional M2 a wire cannot jog around them. The fix is a placement
-keep-out: [The M3 stripe problem](#the-m3-stripe-problem).
-
 **How are the M0 power rails handled?**
 pdngen builds follow-pin rails on M0, extends them to a core ring, and ties them to M3
 VDD/VSS stripe pairs through via stacks. `check_power_grid` runs right after the PDN (the
 run stops if the grid isn't clean) and again after routing.
+
+**How does a 3 nm-class nanosheet library compare with other open PDKs?**
+Same RTL, same image, seven platforms from 180 nm to 2 nm: [Technology roadmap](#technology-roadmap).
 
 **Is this usable for sign-off or fabrication?**
 No. The PDK is predictive and academic, wire R/C and macros are placeholders, and the
@@ -362,6 +391,8 @@ place and route, predictive PDK, EDA, open-source EDA.</sub>
 │   ├── gui.sh             open a database in OpenROAD's web viewer (or the X11 GUI)
 │   ├── export_odb.tcl     DEF + Verilog of a saved database (e.g. cts.odb)
 │   ├── summarize.py       table of all runs
+│   ├── orfs_ref.sh        ORFS reference run on another platform (for the roadmap)
+│   ├── roadmap.py         technology roadmap table, json and figure
 │   ├── snapshot.tcl       headless layout images
 │   └── plot_drt.py        detailed routing convergence plot
 └── docs/images/
