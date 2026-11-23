@@ -10,9 +10,11 @@
 [![Node](https://img.shields.io/badge/node-3%20nm%20class-d1242f)](#the-platform)
 [![Library](https://img.shields.io/badge/library-NS3K__5T%20nanosheet-2da44e)](#the-platform)
 
-<img src="docs/images/@HERO@" width="720" alt="@HERO_ALT@"/>
+<img src="docs/images/serv_route.png" width="720" alt="OpenROAD place-and-route result: SERV RISC-V core fully routed on the NS3K 5-track nanosheet library, 0 DRC"/>
 
-<sub>@HERO_CAPTION@</sub>
+<sub><b>SERV</b> (bit-serial RISC-V), placed and routed on the <b>NS3K_5T</b> library: 8.6 × 8.6 µm, 1,175 cells, <b>0 DRC</b>, clean power grid.</sub>
+
+**[Quick start](#quick-start)** · [Gallery](#gallery) · [The M3 stripe problem](#the-m3-stripe-problem) · [The flow](#the-flow) · [Results](#results) · [Open problems](#open-problems) · [FAQ](#faq)
 
 </div>
 
@@ -35,11 +37,59 @@ library. This repository is a complete, scriptable **OpenROAD** flow for it:
 - **A power grid that routes**: M3 VDD/VSS stripe pairs tied to every rail, a core ring, and a placement keep-out under the stripes that takes the detailed router from a stuck run to 0 violations (see [The M3 stripe problem](#the-m3-stripe-problem)).
 - **Hard macros** (abstract SRAMs) placed by RTL-MP, with their own power grid.
 - **12 benchmark designs** included as netlists (gcd, SERV, AES, RISC-V, Rocket, SweRV, BlackParrot, …).
-- Runs entirely in the OpenROAD docker image, with no license and no GUI needed. Layout snapshots are rendered headless.
+- **No commercial tool license, no GUI.** Everything runs in the OpenROAD docker image, layout snapshots included.
 
-@GALLERY@
+### Where it stands
 
-@RESULTS@
+| | Result |
+|---|---|
+| Floorplan → detailed route, **9 of 12** designs (gcd, SERV, AES, riscv32i, dynamic_node, jpeg, tinyRocket, ethmac, bp_fe_top) | **0 DRC**, power grid clean |
+| Largest routed design | jpeg, 64,369 cells, 55.4 × 55.4 µm, 0 DRC |
+| Not closed yet | bp_be_top, swerv, swerv_wrapper (no finished detailed route; see [Open problems](#open-problems)) |
+| Timing | gcd, AES meet 1.0 ns after routing; the others don't (see [Results](#results)) |
+
+## Gallery
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/serv_stripe_closeup.png" alt="Close-up of an M3 power stripe pair crossing the rows"/></td>
+<td width="50%"><img src="docs/images/tinyRocket_place.png" alt="tinyRocket placed with SRAM macros and the power grid"/></td>
+</tr>
+<tr>
+<td><sub><b>An M3 stripe pair</b> (SERV, close-up). The two olive bands are the VDD/VSS stripes, the blue lines the M0 rails they are tied to. No cell sits under them or next to them: that is the keep-out of <a href="#the-m3-stripe-problem">the next section</a>.</sub></td>
+<td><sub><b>tinyRocket</b> (Rocket tile with SRAM macros, 30,280 cells, 40.7 × 40.9 µm) after placement. The macros sit in the top-left corner, rows are cut around them, and the M3 stripe grid covers the standard cells.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/aes_congestion.png" alt="AES global routing congestion heat map"/></td>
+<td><img src="docs/images/serv_pdn.png" alt="Power grid of SERV"/></td>
+</tr>
+<tr>
+<td><sub><b>AES</b> global-routing congestion (11,421 cells, 25 × 25 µm). Red is dense; the detailed router still finishes with 0 DRC.</sub></td>
+<td><sub><b>Power grid</b> of SERV: M0 rails (blue) tied to M3 VDD/VSS stripe pairs (olive, every 2 µm) and to the core ring (magenta).</sub></td>
+</tr>
+</table>
+
+## Results
+
+Every design below is routed with the flow's defaults (`scripts/run_or.sh <design> NS3K_5T`),
+clock period 1.0 ns (SERV: 0.25 ns), up to 64 detailed routing iterations. Numbers come from
+`python3 scripts/summarize.py --md`.
+
+| Design | Cells | Die (µm) | Util. | Setup WNS (ns) | Hold WNS (ns) | Power (mW) | DRC | PG | Runtime |
+|---|---|---|---|---|---|---|---|---|---|
+| gcd | 276 | 4.8 × 4.8 | 0.66 | +0.497 | +0.019 | 0.32 | **0** | clean | 4 min |
+| serv | 1,175 | 8.6 × 8.6 | 0.73 | −0.048 | −0.011 | 8.5 | **0** | clean | 9 min |
+| riscv32i | 9,607 | 28.4 × 28.5 | 0.52 | −0.797 | −0.039 | 12.5 | **0** | clean | 57 min |
+| aes | 11,421 | 25.0 × 25.0 | 0.55 | +0.266 | −0.023 | 13.5 | **0** | clean | 46 min |
+| dynamic_node | 11,788 | 29.3 × 29.3 | 0.65 | −0.126 | −0.004 | 21.1 | **0** | clean | 14 min |
+| tinyRocket | 30,280 | 40.7 × 40.9 | 0.63 | −0.504 | −0.047 | 40.0 | **0** | clean | 33 min |
+| bp_fe_top | 30,030 | 71.4 × 71.7 | 0.33 | −3.291 | −0.127 | 61.6 | **0** | clean | 119 min |
+| jpeg | 64,369 | 55.4 × 55.4 | 0.63 | −0.365 | −0.062 | 50.8 | **0** | clean | 27 min |
+| ethmac | 54,874 | 57.6 × 57.6 | 0.64 | −0.211 | −0.060 | 83.6 | **0** | clean | 41 min |
+
+Cells exclude macros; utilization is of the standard cells in the die. Timing and power use the placeholder wire R/C of the tech LEF and are
+estimates, see [The platform](#the-platform). The clock periods are targets, not tuned:
+a negative WNS says the design needs a longer period, or work on timing, not that routing failed.
 
 ## The M3 stripe problem
 
@@ -87,7 +137,7 @@ cd i3dPDK_NS3K
 git clone https://github.com/RayChang987/openroad-i3dpdk-ns3k ns3k_openroad_enablement
 cd ns3k_openroad_enablement
 
-scripts/run_or.sh gcd NS3K_5T                              # @GCD_TIME@
+scripts/run_or.sh gcd NS3K_5T                              # ~4 min, ends with 0 DRC
 env UTIL=0.5 OUT_TAG=u50 scripts/run_or.sh aes NS3K_5T     # any parameter as an env variable
 python3 scripts/summarize.py                               # one line per run (--md for markdown)
 ```
@@ -235,7 +285,59 @@ Metal stack: M0 … M16 (M2/M4 at a 24 nm pitch, M3 at 22 nm, M1 at 44 nm); libe
 plus SERV. The PDK has no TIE cells, so constants are tied logically to VDD/VSS. It has
 no delay cells either, so hold is fixed with buffer chains.
 
-@OPEN_PROBLEMS@
+## Open problems
+
+Contributions and ideas are very welcome. These are open research questions as much as
+engineering tasks.
+
+### 1. Three designs without a finished route
+
+bp_be_top, swerv and swerv_wrapper have no finished detailed route in the results above.
+bp_be_top and swerv reach global routing, and their detailed-routing logs stop at about
+6,000 and 33,000 violations at 70 % of an iteration. swerv_wrapper (three macros, UTIL 0.4)
+has a log that ends during timing repair after CTS. Whether it is the stripe keep-out, the macro
+channels or just run time is not known yet.
+
+### 2. Timing closure
+
+Only gcd and AES meet the 1.0 ns target after routing, and hold slack is slightly negative
+on 8 of the 9 routed designs. bp_fe_top misses by 3.3 ns. The flow repairs setup and hold
+after CTS and global routing, but a 3 nm-class library with no delay cells leaves it
+little to work with: hold is fixed with buffer chains.
+
+### 3. Parasitics
+
+The `.tf` has no wire R/C. The values in the tech LEF are placeholders, and there is no
+OpenRCX extraction deck for this PDK, so final timing uses global-route estimates.
+
+### 4. The keep-out costs area
+
+The M3 stripe keep-out removes about 12 % of the row width. Shorter stripe pitches or
+stripes on a higher metal could give some of it back; neither is evaluated here.
+
+## FAQ
+
+**Can OpenROAD place and route a 3 nm-class nanosheet library with unidirectional metals?**
+Yes. With this flow 9 of the 12 included designs, up to 64,000 cells, reach 0 DRC on
+`NS3K_5T` with M2–M4 strictly unidirectional and on-track. See [Results](#results).
+
+**Why does the detailed router get stuck next to power stripes?**
+Under a stripe pair, M3 tracks are taken and M0→M3 via stacks leave M1/M2 pads every
+120 nm. With unidirectional M2 a wire cannot jog around them. The fix is a placement
+keep-out: [The M3 stripe problem](#the-m3-stripe-problem).
+
+**How are the M0 power rails handled?**
+pdngen builds follow-pin rails on M0, extends them to a core ring, and ties them to M3
+VDD/VSS stripe pairs through via stacks. `check_power_grid` runs right after the PDN (the
+run stops if the grid isn't clean) and again after routing.
+
+**Is this usable for sign-off or fabrication?**
+No. The PDK is predictive and academic, wire R/C and macros are placeholders, and the
+license excludes commercial use.
+
+<sub>Keywords: OpenROAD, OpenROAD-flow-scripts (ORFS), Yosys, TritonRoute, i3dPDK_NS3K, 3 nm, nanosheet, GAAFET,
+gate-all-around, unidirectional routing, power stripes, standard cells, RTL-to-layout, physical design,
+place and route, predictive PDK, EDA, open-source EDA.</sub>
 
 ## Repository layout
 
