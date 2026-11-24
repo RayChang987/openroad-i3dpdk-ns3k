@@ -43,9 +43,8 @@ library. This repository is a complete, scriptable **OpenROAD** flow for it:
 
 | | Result |
 |---|---|
-| Floorplan → detailed route, **9 of 12** designs (gcd, SERV, AES, riscv32i, dynamic_node, jpeg, tinyRocket, ethmac, bp_fe_top) | **0 DRC**, power grid clean |
-| Largest routed design | jpeg, 64,369 cells, 55.4 × 55.4 µm, 0 DRC |
-| Not closed yet | bp_be_top, swerv, swerv_wrapper (no finished detailed route yet; see [Open problems](#open-problems)) |
+| Floorplan → detailed route, **all 12** designs | **0 DRC**, power grid clean |
+| Largest routed design | swerv_wrapper, 137,046 cells, 119 × 119 µm, 0 DRC |
 | Timing | gcd, AES meet 1.0 ns after routing; the others don't (see [Results](#results)) |
 
 ## Gallery
@@ -86,10 +85,15 @@ clock period 1.0 ns (SERV: 0.25 ns), up to 64 detailed routing iterations. Numbe
 | bp_fe_top | 30,030 | 71.4 × 71.7 | 0.33 | −3.291 | −0.127 | 61.6 | **0** | clean | 119 min |
 | jpeg | 64,369 | 55.4 × 55.4 | 0.63 | −0.365 | −0.062 | 50.8 | **0** | clean | 27 min |
 | ethmac | 54,874 | 57.6 × 57.6 | 0.64 | −0.211 | −0.060 | 83.6 | **0** | clean | 41 min |
+| bp_be_top | 59,773 | 86.2 × 86.3 | 0.36 | −1.331 | −0.123 | 107.8 | **0** | clean | 189 min² |
+| swerv | 111,206 | 88.0 × 88.0 | 0.45 | −1.880 | −0.083 | 94.0 | **0** | clean | 295 min² |
+| swerv_wrapper | 137,046 | 119.2 × 119.4 | 0.40 | −2.088 | −0.277 | 172.7 | **0** | clean | 311 min² |
 
 Cells exclude macros; utilization is of the standard cells in the die. Timing and power use the placeholder wire R/C of the tech LEF and are
 estimates, see [The platform](#the-platform). The clock periods are targets, not tuned:
 a negative WNS says the design needs a longer period, or work on timing, not that routing failed.
+
+² The three largest designs ran at the same time with 4 threads each, so their runtimes are not comparable with the others. "PG clean" means `check_power_grid` finds only the tied constant pins unconnected (the PDK has no TIE cells).
 
 ## Quick start
 
@@ -311,27 +315,20 @@ python3 scripts/roadmap.py --plot                 # table, docs/roadmap/results.
 Contributions and ideas are very welcome. These are open research questions as much as
 engineering tasks.
 
-### 1. Three designs without a finished route
+### 1. Timing closure
 
-bp_be_top, swerv and swerv_wrapper (the three with the most macros and the largest
-netlists) are not in the results above: no run of them has finished detailed routing yet.
-Earlier attempts were still reporting thousands of violations when they were stopped,
-and the 12 % stripe keep-out, the macro channels and plain run time are all candidates.
-Which one it is is not known yet.
-
-### 2. Timing closure
-
-Only gcd and AES meet the 1.0 ns target after routing, and hold slack is slightly negative
-on 8 of the 9 routed designs. bp_fe_top misses by 3.3 ns. The flow repairs setup and hold
-after CTS and global routing, but a 3 nm-class library with no delay cells leaves it
+Only gcd and AES meet the 1.0 ns target after routing, and hold slack is negative on 11
+of the 12 designs (−0.004 to −0.28 ns). bp_fe_top misses setup by 3.3 ns; bp_be_top, swerv
+and swerv_wrapper by 1.3–2.1 ns. The flow repairs setup and hold after CTS and global
+routing, but a 3 nm-class library with no delay cells leaves it
 little to work with: hold is fixed with buffer chains.
 
-### 3. Parasitics
+### 2. Parasitics
 
 The `.tf` has no wire R/C. The values in the tech LEF are placeholders, and there is no
 OpenRCX extraction deck for this PDK, so final timing uses global-route estimates.
 
-### 4. The keep-out costs area
+### 3. The keep-out costs area
 
 The M3 stripe keep-out removes about 12 % of the row width. Shorter stripe pitches or
 stripes on a higher metal could give some of it back; neither is evaluated here.
@@ -339,7 +336,7 @@ stripes on a higher metal could give some of it back; neither is evaluated here.
 ## FAQ
 
 **Can OpenROAD place and route a 3 nm-class nanosheet library with unidirectional metals?**
-Yes. With this flow 9 of the 12 included designs, up to 64,000 cells, reach 0 DRC on
+Yes. With this flow all 12 included designs, up to 137,000 cells, reach 0 DRC on
 `NS3K_5T` with M2–M4 strictly unidirectional and on-track. See [Results](#results).
 
 **How are the M0 power rails handled?**
